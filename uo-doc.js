@@ -43,6 +43,10 @@
 
   const PAPER_W = 794;
   const PAPER_H = 1123;
+  /* 처음 밀도를 고르는 어림 무게(묶음 줄 1 · 세부 줄 0.8 · 긴 이름 · 주소는 넘친 줄만큼) 의 경계.
+     794 × 1123 종이에 실제로 넣어 잰 값(2026-10-01): 기본 ~21 · dense-1 ~24 · dense-2 ~31 · dense-3+tight ~36 · tight-2 ~38.
+     세부 줄이 있으면 31 을 넘을 때 이어 쓴 판으로(그 판은 세부 줄 100개도 들어간다) */
+  const DOC_FIT = { dense1: 20, dense2: 24, dense3: 31, tight: 33, tight2: 37 };
 
   const LOGO_FILE = "./uo-logo.png";
   const MARK_FILE = "./uo-watermark.png";
@@ -146,33 +150,49 @@
        signable: true/false      // 발주자 칸을 누를 수 있는지
      }
      --------------------------------------------------------------- */
-  function metaRow(label, value, label2, value2) {
-    if (label2) {
-      return '<div class="nc2-meta-row nc2-meta-split">' +
-        '<div class="nc2-meta-k">' + esc(label) + "</div>" +
-        '<div class="nc2-meta-v">' + esc(value) + "</div>" +
-        '<div class="nc2-meta-k">' + esc(label2) + "</div>" +
-        '<div class="nc2-meta-v">' + esc(value2) + "</div>" +
-        "</div>";
-    }
-    return '<div class="nc2-meta-row">' +
-      '<div class="nc2-meta-k">' + esc(label) + "</div>" +
-      '<div class="nc2-meta-v nc2-meta-wide">' + esc(value) + "</div>" +
-      "</div>";
-  }
-
   function buildDoc(data, idAttr) {
     const d = data || {};
-    const rows = collapseGroups(d.rows);
+    const raw = collapseGroups(d.rows);
 
     // 원 견적에 이어 붙는 추가 공사면 제목과 표기를 바꿉니다.
     const isAddon = !!d.addonBase;
     const docTitle = isAddon ? "추가 견적서" : "견 적 서";
 
-    /* 행이 많으면 글자와 줄높이를 단계적으로 줄여 1장에 맞춥니다. */
-    let density = "";
-    if (rows.length > 34) density = " nc2-dense-2";
-    else if (rows.length > 24) density = " nc2-dense-1";
+    /* ★ 세부 항목(└ 줄)이 2줄 이상 이어지면, 한 줄씩 쓴 판과 한 칸에 이어 쓴 판(.nc2-subjoin)을 둘 다 넣어 둔다.
+         평소엔 한 줄씩 — 한 장에 안 들어갈 때만 종이에 nc2-joined 를 붙여 이어 쓴 판으로 바꾼다(fitPaper).
+         항목은 하나도 빼지 않는다 (2.0 · 검수 1차: 37줄 · 긴 고객명에서 서명 · 연락처가 잘렸다) */
+    const runs = [];                       // 이어지는 세부 줄 묶음 [{ at, items }]
+    raw.forEach(function (row, i) {
+      if (!row.sub) return;
+      const last = runs[runs.length - 1];
+      if (last && last.at + last.items.length === i) last.items.push(row);
+      else runs.push({ at: i, items: [row] });
+    });
+    const runOf = {};
+    let runNo = 0;
+    runs.forEach(function (run) {
+      if (run.items.length < 2) return;
+      run.no = runNo++;
+      run.items.forEach(function (row, k) { runOf[run.at + k] = { run: run, first: k === 0 }; });
+    });
+
+    /* 한 줄씩 쓴 판의 높이를 어림해 처음 밀도를 고른다(긴 고객명 · 주소는 줄 수만큼 더한다).
+       아주 길면 처음부터 이어 쓴 판. 어림이 빗나가도 화면 · PDF 에 놓은 뒤 fitPaper 가 실제 높이를 재서 한 단계씩 더 줄인다 */
+    const nameLines = Math.max(1, Math.ceil(String(d.customerName || "").length / 20));
+    const addrLines = Math.max(1, Math.ceil(String(d.address || "").length / 30));
+    const extra = (nameLines - 1) * 1.5 + (addrLines - 1);
+    const sepWeight = raw.reduce(function (w, row) { return w + (row.sub ? 0.8 : 1); }, 0) + extra;
+    /* 단계는 fitPaper 와 같은 차례로 쌓는다(dense-1 → 2 → 3 → 이어 쓰기 → tight → tight-2).
+       이 어림만으로도 한 장에 들어가게 잡고, 화면 · PDF 에서는 fitPaper 가 실제 높이로 한 번 더 확인한다 */
+    const hasRuns = runs.some(function (run) { return run.items.length > 1; });
+    let lvl = 0;
+    if (sepWeight > DOC_FIT.dense1) lvl = 1;
+    if (sepWeight > DOC_FIT.dense2) lvl = 2;
+    if (sepWeight > DOC_FIT.dense3) lvl = hasRuns ? 4 : 3;
+    if (!hasRuns && sepWeight > DOC_FIT.tight) lvl = 5;
+    if (!hasRuns && sepWeight > DOC_FIT.tight2) lvl = 6;
+    const density = DENSITY_STEPS.slice(0, lvl).filter(function (c) { return hasRuns || c !== "nc2-joined"; })
+      .map(function (c) { return " " + c; }).join("");
 
     const supply = Number(d.supply) || 0;
     const vat = (d.vat != null) ? Number(d.vat) : vatOf(supply);
@@ -180,9 +200,18 @@
 
     const sign = d.sign || {};
 
-    const bodyRows = rows.map(function (row) {
+    const bodyRows = raw.map(function (row, i) {
+      const r = runOf[i];
       if (row.sub) {
-        return '<tr class="nc2-sub">' +
+        /* 이어 쓴 판(품명부터 비고까지 한 칸)은 그 묶음 첫 줄 앞에 한 번 — nc2-joined 일 때만 보인다 */
+        const joined = (r && r.first)
+          ? '<tr class="nc2-sub nc2-subjoin" data-run="' + r.run.no + '">' +
+              "<td></td>" +
+              '<td class="nc2-l nc2-subname" colspan="7">└ ' +
+                esc(r.run.items.map(function (it) { return it.name; }).join(" · ")) + "</td>" +
+            "</tr>"
+          : "";
+        return joined + '<tr class="nc2-sub' + (r ? ' nc2-sep" data-run="' + r.run.no : "") + '">' +
           "<td></td>" +
           '<td class="nc2-l nc2-subname">└ ' + esc(row.name) + "</td>" +
           '<td colspan="6"></td>' +
@@ -213,106 +242,131 @@
           ? '<div class="nc2-sign-at nc2-sign-hint">터치하여 서명</div>'
           : '<div class="nc2-sign-at">&nbsp;</div>');
 
+    /* ★★ 2.0 서식 (2026-10-01) — 읽는 차례대로: 회사 → 현장 → 작업 범위 → 기간 → 금액 → 조건 → 서명.
+         담긴 값 · 특약 문구 · 금액 계산 · 서명 칸(data-nc2-sign)은 예전 그대로이고 놓는 자리와 위계만 바꿨다.
+         화면 · PDF · 사진이 모두 이 한 장을 쓴다(794 × 1123). */
     return '' +
       '<section ' + (idAttr || "") + ' class="nc2-paper' + density + '">' +
         '<img class="nc2-watermark" src="' + MARK_FILE + '" alt="" aria-hidden="true" />' +
 
-        /* 머리 */
+        /* 머리 — 회사 표 · 문서 제목 · 번호/날짜 */
         '<header class="nc2-head">' +
-          '<img class="nc2-logo" src="' + LOGO_FILE + '" alt="UNION ONE" />' +
-          '<h1 class="nc2-title' + (isAddon ? " nc2-title-addon" : "") + '">' + docTitle + "</h1>" +
+          '<div class="nc2-brand">' +
+            '<img class="nc2-logo" src="' + LOGO_FILE + '" alt="UNION ONE" />' +
+            '<div class="nc2-brand-sub">' + esc(SUPPLIER.company) + " · " + esc(SUPPLIER.bizItem) + "</div>" +
+          "</div>" +
+          '<div class="nc2-titlebox">' +
+            '<h1 class="nc2-title' + (isAddon ? " nc2-title-addon" : "") + '">' + docTitle + "</h1>" +
+            '<div class="nc2-docmeta">' +
+              "<span>견적번호</span><strong>" + esc(d.code || "-") + "</strong>" +
+              "<span>견적일자</span><strong>" + esc(d.dateText || todayText()) + "</strong>" +
+            "</div>" +
+          "</div>" +
         "</header>" +
 
-        /* 고객 · 공급자 */
-        '<div class="nc2-top">' +
-          '<div class="nc2-client">' +
-            '<div class="nc2-client-name">' +
-              "<strong>" + esc(d.customerName || "-") + "</strong>" +
-              "<span>귀하</span>" +
-            "</div>" +
-            '<div class="nc2-client-grid">' +
-              '<div class="nc2-ck">견적일자</div><div class="nc2-cv">' + esc(d.dateText || todayText()) + "</div>" +
-              '<div class="nc2-ck">공사기간</div><div class="nc2-cv">' + esc((Number(d.workDays) || 1) + "일") + "</div>" +
-              '<div class="nc2-ck">견적번호</div><div class="nc2-cv">' + esc(d.code || "-") + "</div>" +
-              (isAddon
-                ? '<div class="nc2-ck">원 견적</div><div class="nc2-cv">' + esc(d.addonBase) + "</div>"
-                : '<div class="nc2-ck">담당자</div><div class="nc2-cv">' + esc(d.staffName || "-") + "</div>") +
-            "</div>" +
+        /* ① 회사(공급자) · ② 현장(받는 분) — 나란히 (왼쪽부터 읽는다) */
+        '<div class="nc2-band">' +
+        '<section class="nc2-sec nc2-from">' +
+          '<h2 class="nc2-h"><b>1</b>공급자</h2>' +
+          '<div class="nc2-kv nc2-kv-4">' +
+            "<span>상호</span><strong>" + esc(SUPPLIER.company) + "</strong>" +
+            "<span>대표자</span><strong>" + esc(SUPPLIER.ceo) + "</strong>" +
+            '<span>등록번호</span><strong class="nc2-wide">' + esc(SUPPLIER.bizNo) + "</strong>" +
+            '<span>업태 · 종목</span><strong class="nc2-wide">' + esc(SUPPLIER.bizType) + " · " + esc(SUPPLIER.bizItem) + "</strong>" +
+            '<span>소재지</span><strong class="nc2-wide">' + esc(SUPPLIER.address) + "</strong>" +
+            "<span>전화</span><strong>" + esc(SUPPLIER.tel) + "</strong>" +
+            "<span>FAX</span><strong>" + esc(SUPPLIER.fax) + "</strong>" +
           "</div>" +
+        "</section>" +
 
-          '<div class="nc2-meta">' +
-            metaRow("등록번호", SUPPLIER.bizNo) +
-            metaRow("상호명", SUPPLIER.company, "대표자", SUPPLIER.ceo) +
-            metaRow("소재지", SUPPLIER.address) +
-            metaRow("업태", SUPPLIER.bizType, "종목", SUPPLIER.bizItem) +
-            metaRow("전화번호", SUPPLIER.tel, "FAX", SUPPLIER.fax) +
+        /* ② 현장(받는 분) */
+        '<section class="nc2-sec nc2-to">' +
+          '<h2 class="nc2-h"><b>2</b>현장 · 받는 분</h2>' +
+          '<div class="nc2-client-name"><strong>' + esc(d.customerName || "-") + "</strong><span>귀하</span></div>" +
+          '<div class="nc2-kv nc2-kv-4">' +
+            '<span>현장주소</span><strong class="nc2-wide nc2-addr">' + esc(d.address || "-") + "</strong>" +
+            '<span>연락처</span><strong class="nc2-wide">' + esc(d.phone || "-") + "</strong>" +
+            (isAddon
+              ? '<span>원 견적</span><strong class="nc2-wide">' + esc(d.addonBase) + "</strong>"
+              : '<span>담당자</span><strong class="nc2-wide">' + esc(d.staffName || "-") + "</strong>") +
           "</div>" +
+        "</section>" +
         "</div>" +
 
-        /* 현장 */
-        '<div class="nc2-site">' +
-          "<span>현장주소</span><strong>" + esc(d.address || "-") + "</strong>" +
-          "<span>연락처</span><strong>" + esc(d.phone || "-") + "</strong>" +
-        "</div>" +
+        /* ③ 작업 범위 */
+        '<section class="nc2-sec nc2-scope">' +
+          '<h2 class="nc2-h"><b>3</b>작업 범위 · 내역</h2>' +
+          '<table class="nc2-table">' +
+            "<colgroup>" +
+              '<col style="width:68px" /><col /><col style="width:96px" />' +
+              '<col style="width:40px" /><col style="width:44px" />' +
+              '<col style="width:90px" /><col style="width:102px" /><col style="width:62px" />' +
+            "</colgroup>" +
+            "<thead><tr>" +
+              "<th>구분</th><th>품명</th><th>규격</th><th>단위</th>" +
+              "<th>수량</th><th>단가</th><th>금액</th><th>비고</th>" +
+            "</tr></thead>" +
+            "<tbody>" + (bodyRows || '<tr><td colspan="8" class="nc2-c">선택된 작업 범위가 없습니다.</td></tr>') + "</tbody>" +
+          "</table>" +
+        "</section>" +
 
-        /* 내역 */
-        '<table class="nc2-table">' +
-          "<colgroup>" +
-            '<col style="width:66px" /><col /><col style="width:88px" />' +
-            '<col style="width:40px" /><col style="width:44px" />' +
-            '<col style="width:92px" /><col style="width:104px" /><col style="width:76px" />' +
-          "</colgroup>" +
-          "<thead><tr>" +
-            "<th>구 분</th><th>품 명</th><th>규 격</th><th>단위</th>" +
-            "<th>수량</th><th>단 가</th><th>금 액</th><th>비 고</th>" +
-          "</tr></thead>" +
-          "<tbody>" + (bodyRows || '<tr><td colspan="8" class="nc2-c">선택된 작업 범위가 없습니다.</td></tr>') + "</tbody>" +
-        "</table>" +
-
-        /* 서명 + 합계 */
-        '<div class="nc2-foot">' +
-          '<div class="nc2-signs">' +
-            '<div class="nc2-sign-cell">' +
-              '<div class="nc2-sign-label">시공사</div>' +
-              '<div class="nc2-sign-box"><img class="nc2-stamp" src="' + stampSrc + '" alt="시공사 직인" /></div>' +
-              '<div class="nc2-sign-at">' + esc(SUPPLIER.company) + "</div>" +
-            "</div>" +
-            '<div class="nc2-sign-cell">' +
-              '<div class="nc2-sign-label">발주자</div>' +
-              '<div class="nc2-sign-box' + touchClass + '"' + touchAttr + ">" + customerBox + "</div>" +
-              signFoot +
-            "</div>" +
+        /* ④ 기간 · ⑤ 금액 — 아래로 모은다 */
+        '<div class="nc2-bottomgrp">' +
+          '<div class="nc2-money-row">' +
+            '<section class="nc2-sec nc2-period">' +
+              '<h2 class="nc2-h"><b>4</b>공사기간</h2>' +
+              '<div class="nc2-period-v"><strong>' + esc(String(Number(d.workDays) || 1)) + "</strong><span>일</span></div>" +
+            "</section>" +
+            '<section class="nc2-sec nc2-total">' +
+              '<h2 class="nc2-h"><b>5</b>견적 금액</h2>' +
+              '<div class="nc2-total-row"><span>공급가액</span><strong>' + num(supply) + "</strong></div>" +
+              '<div class="nc2-total-row"><span>부가세(10%)</span><strong>' + num(vat) + "</strong></div>" +
+              '<div class="nc2-total-row nc2-total-grand"><span>합계 (부가세 포함)</span><strong>' + num(total) + "<em>원</em></strong></div>" +
+            "</section>" +
           "</div>" +
 
-          '<div class="nc2-total">' +
-            '<div class="nc2-total-row"><span>합 계</span><strong>' + num(supply) + "</strong></div>" +
-            '<div class="nc2-total-row"><span>부가세(10%)</span><strong>' + num(vat) + "</strong></div>" +
-            '<div class="nc2-total-row nc2-total-grand"><span>총 계</span><strong>' + num(total) + "</strong></div>" +
-          "</div>" +
-        "</div>" +
-
-        /* 추가공사 안내 */
-        (isAddon
-          ? '<div class="nc2-addon-note">본 견적서는 ' + esc(d.addonBase) +
-            ' 현장의 <strong>추가 공사</strong>에 대한 별도 견적입니다. 기존 계약 금액에 합산됩니다.</div>'
-          : "") +
-
-        /* 특약 */
-        '<div class="nc2-terms">' +
-          '<div class="nc2-terms-title">특약사항</div>' +
-          "<ol>" + TERMS.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
-        "</div>" +
-
-        /* 푸터 */
-        '<div class="nc2-bottom">' +
-          /* 계좌가 비어 있으면 줄 자체를 그리지 않습니다 ('계좌: -' 가 찍히면 안 됩니다) */
-          (SUPPLIER.bank
-            ? '<div class="nc2-bank">계좌번호: ' + esc(SUPPLIER.bank) + "</div>"
+          /* 추가공사 안내 */
+          (isAddon
+            ? '<div class="nc2-addon-note">본 견적서는 ' + esc(d.addonBase) +
+              ' 현장의 <strong>추가 공사</strong>에 대한 별도 견적입니다. 기존 계약 금액에 합산됩니다.</div>'
             : "") +
-          '<div class="nc2-contact">' +
-            "<span>" + esc(SUPPLIER.tel2) + "</span>" +
-            "<span>" + esc(SUPPLIER.fax) + "</span>" +
-            "<span>" + esc(SUPPLIER.email) + "</span>" +
+
+          /* ⑥ 조건 · ⑦ 서명 — 나란히 */
+          '<div class="nc2-end-row">' +
+          '<section class="nc2-sec nc2-terms">' +
+            '<h2 class="nc2-h"><b>6</b>특약사항</h2>' +
+            "<ol>" + TERMS.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
+            /* 계좌가 비어 있으면 줄 자체를 그리지 않습니다 ('계좌: -' 가 찍히면 안 됩니다) */
+            (SUPPLIER.bank
+              ? '<div class="nc2-bank">계좌번호: ' + esc(SUPPLIER.bank) + "</div>"
+              : "") +
+          "</section>" +
+
+          /* ⑦ 서명 */
+          '<section class="nc2-sec nc2-signsec">' +
+            '<h2 class="nc2-h"><b>7</b>서명</h2>' +
+            '<div class="nc2-signs">' +
+              '<div class="nc2-sign-cell">' +
+                '<div class="nc2-sign-label">시공사</div>' +
+                '<div class="nc2-sign-box"><img class="nc2-stamp" src="' + stampSrc + '" alt="시공사 직인" /></div>' +
+                '<div class="nc2-sign-at">' + esc(SUPPLIER.company) + "</div>" +
+              "</div>" +
+              '<div class="nc2-sign-cell">' +
+                '<div class="nc2-sign-label">발주자</div>' +
+                '<div class="nc2-sign-box' + touchClass + '"' + touchAttr + ">" + customerBox + "</div>" +
+                signFoot +
+              "</div>" +
+            "</div>" +
+          "</section>" +
+          "</div>" +
+
+          /* 푸터 */
+          '<div class="nc2-bottom">' +
+            '<div class="nc2-contact">' +
+              "<span>" + esc(SUPPLIER.tel2) + "</span>" +
+              "<span>" + esc(SUPPLIER.fax) + "</span>" +
+              "<span>" + esc(SUPPLIER.email) + "</span>" +
+            "</div>" +
           "</div>" +
         "</div>" +
         '<div class="nc2-rule"></div>' +
@@ -323,11 +377,55 @@
      화면 폭에 맞춰 A4 원본을 통째로 축소합니다.
      보이는 화면과 저장되는 PDF가 어긋나지 않게 하려는 목적입니다.
      --------------------------------------------------------------- */
+  /* ---------------------------------------------------------------
+     한 장에 맞추기 — 화면 · PDF 에 놓은 종이의 실제 높이를 재서, 넘치면 밀도를 한 단계씩 더 올린다 (2.0 · 검수 1차).
+     buildDoc 의 어림(줄 수 · 이름 · 주소 길이)이 빗나가도 서명 · 연락처가 잘리지 않게 하는 안전장치
+     --------------------------------------------------------------- */
+  const DENSITY_STEPS = ["nc2-dense-1", "nc2-dense-2", "nc2-dense-3", "nc2-joined", "nc2-tight", "nc2-tight-2"];
+  function fitPaper(paper) {
+    if (!paper || !paper.classList) return;
+    const over = function () { return paper.scrollHeight > PAPER_H + 1; };
+    const joins = Array.prototype.slice.call(paper.querySelectorAll("tr.nc2-subjoin[data-run]"));
+    const seps = function (row) { return paper.querySelectorAll('tr.nc2-sep[data-run="' + row.getAttribute("data-run") + '"]'); };
+    const setJoin = function (row, on) {
+      row.classList.toggle("nc2-on", on);
+      Array.prototype.forEach.call(seps(row), function (r) { r.classList.toggle("nc2-off", on); });
+    };
+
+    /* 세부 줄 이어 쓰기는 묶음마다 — 어림으로 통째 이어 쓴 판이면, 작은 묶음부터 한 줄씩으로 되돌려 보고
+       들어가는 만큼만 남긴다(읽기 쉬운 쪽). 안 들어가면 그 묶음은 이어 쓴 채로 */
+    if (paper.classList.contains("nc2-joined") && joins.length) {
+      paper.classList.remove("nc2-joined");
+      joins.forEach(function (row) { setJoin(row, true); });
+      joins.slice().sort(function (a, b) { return seps(a).length - seps(b).length; }).some(function (row) {
+        setJoin(row, false);
+        if (!over()) return false;
+        setJoin(row, true);
+        return true;                       // 이보다 큰 묶음도 안 들어간다
+      });
+    }
+
+    let i = -1;
+    DENSITY_STEPS.forEach(function (c, k) { if (paper.classList.contains(c)) i = k; });
+    while (over() && i < DENSITY_STEPS.length - 1) {
+      i += 1;
+      if (DENSITY_STEPS[i] === "nc2-joined" && joins.length) {
+        // 큰 묶음부터 하나씩 이어 쓴다 — 들어가면 멈춘다
+        joins.filter(function (row) { return !row.classList.contains("nc2-on"); })
+          .sort(function (a, b) { return seps(b).length - seps(a).length; })
+          .some(function (row) { setJoin(row, true); return !over(); });
+      } else {
+        paper.classList.add(DENSITY_STEPS[i]);
+      }
+    }
+  }
+
   function fitScreenDoc(hostEl, maxHeightEl) {
     const host = hostEl || document.querySelector(".nc2-screen-host");
     if (!host) return;
     const wrap = host.querySelector(".nc2-screen-wrap");
     if (!wrap) return;
+    fitPaper(wrap.querySelector(".nc2-paper"));
 
     const availW = host.clientWidth || PAPER_W;
     const panel = maxHeightEl || host.closest(".estimate-doc");
@@ -532,6 +630,7 @@
       return new Promise(function (resolve) { img.onload = resolve; img.onerror = resolve; });
     }));
     await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+    fitPaper(paper);                       // PDF · 사진도 화면과 같이 한 장에 맞춘다
 
     const canvas = await html2canvas(paper, {
       scale: 2,
@@ -580,131 +679,175 @@
     overflow:hidden;pointer-events:none;background:#fff;}
 
   .nc2-paper{position:relative;width:${PAPER_W}px;height:${PAPER_H}px;overflow:hidden;
-    padding:38px 40px 26px;background:#fff;color:#111;box-sizing:border-box;
+    padding:34px 40px 24px;background:#fff;color:#16191D;box-sizing:border-box;
     display:flex;flex-direction:column;isolation:isolate;
     font-family:"UOPretendard","Pretendard",-apple-system,BlinkMacSystemFont,
       "Segoe UI","Noto Sans KR","Apple SD Gothic Neo",sans-serif;
-    font-variant-numeric:tabular-nums;}
+    font-variant-numeric:tabular-nums;word-break:keep-all;}
   .nc2-paper *{box-sizing:border-box;}
-  .nc2-watermark{position:absolute;left:50%;top:52%;width:440px;max-height:170px;
-    transform:translate(-50%,-50%);object-fit:contain;opacity:.06;
+  .nc2-watermark{position:absolute;left:50%;top:56%;width:420px;max-height:160px;
+    transform:translate(-50%,-50%);object-fit:contain;opacity:.045;
     z-index:0;pointer-events:none;}
   .nc2-paper > *:not(.nc2-watermark){position:relative;z-index:1;}
 
-  .nc2-head{display:flex;align-items:center;justify-content:space-between;gap:20px;
-    padding-bottom:14px;}
-  .nc2-logo{width:auto;height:52px;max-width:280px;object-fit:contain;object-position:left center;display:block;}
-  .nc2-title{margin:0;font-size:36px;font-weight:950;letter-spacing:10px;
-    padding-left:10px;line-height:1;}
+  /* 머리 — 회사 표(왼쪽) · 문서 제목과 번호(오른쪽). 아래 남색 굵은 선 */
+  .nc2-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+    padding-bottom:12px;border-bottom:3px solid #1B2A3A;}
+  .nc2-brand{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .nc2-logo{width:auto;height:40px;max-width:260px;object-fit:contain;object-position:left center;display:block;}
+  .nc2-brand-sub{font-size:11px;font-weight:700;color:#5F6772;letter-spacing:.02em;}
+  .nc2-titlebox{display:flex;flex-direction:column;align-items:flex-end;gap:8px;}
+  .nc2-title{margin:0;font-size:32px;font-weight:900;letter-spacing:12px;padding-left:12px;line-height:1;color:#1B2A3A;}
+  .nc2-title-addon{font-size:28px;letter-spacing:6px;}
+  .nc2-docmeta{display:grid;grid-template-columns:auto auto;gap:2px 10px;font-size:11px;align-items:baseline;}
+  .nc2-docmeta span{color:#5F6772;font-weight:700;text-align:right;}
+  .nc2-docmeta strong{font-weight:800;color:#16191D;}
 
-  .nc2-top{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:18px;align-items:stretch;}
-  .nc2-client{display:flex;flex-direction:column;justify-content:space-between;min-width:0;}
-  .nc2-client-name{display:flex;align-items:baseline;gap:10px;padding:0 4px 8px;
-    border-bottom:2px solid #111;}
-  .nc2-client-name strong{font-size:19px;font-weight:900;letter-spacing:-.5px;
+  /* 구획 — 작은 번호 제목 + 내용 */
+  .nc2-sec{margin-top:12px;}
+  .nc2-band{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:12px;align-items:start;}
+  .nc2-band > .nc2-sec{margin-top:0;}
+  .nc2-h{display:flex;align-items:center;gap:7px;margin:0 0 7px;font-size:11.5px;font-weight:850;color:#1B2A3A;letter-spacing:.02em;}
+  .nc2-h b{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:5px;
+    background:#1B2A3A;color:#fff;font-size:10px;font-weight:800;}
+  .nc2-kv{display:grid;border-top:1px solid #D9DCD6;font-size:11px;}
+  .nc2-kv-4{grid-template-columns:62px minmax(0,1fr) 46px minmax(0,1fr);}
+  .nc2-kv > span,.nc2-kv > strong{min-height:22px;display:flex;align-items:center;padding:2px 8px;border-bottom:1px solid #E6E8E3;}
+  .nc2-kv > span{background:#F5F6F3;color:#5F6772;font-weight:750;}
+  .nc2-kv > strong{font-weight:800;color:#16191D;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .nc2-kv > strong.nc2-wide{grid-column:span 3;white-space:normal;line-height:1.4;}
+
+  .nc2-client-name{display:flex;align-items:baseline;gap:8px;margin:0 0 6px;padding:0 2px;}
+  .nc2-client-name strong{font-size:17px;font-weight:900;letter-spacing:-.4px;line-height:1.3;}
+  .nc2-client-name span{font-size:12px;font-weight:800;color:#5F6772;flex:0 0 auto;}
+
+  /* 내역 표 */
+  .nc2-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11.5px;}
+  .nc2-table th{height:26px;background:#1B2A3A;color:#fff;font-weight:800;font-size:11px;
+    border:1px solid #1B2A3A;letter-spacing:.3px;}
+  .nc2-table td{height:22px;padding:0 7px;border:1px solid #E1E4DF;font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .nc2-client-name span{font-size:12px;font-weight:800;color:#555;flex:0 0 auto;}
-  .nc2-client-grid{margin-top:10px;display:grid;grid-template-columns:64px minmax(0,1fr);
-    border:1px solid #D5D5D5;border-radius:4px;overflow:hidden;font-size:11px;}
-  .nc2-ck,.nc2-cv{min-height:23px;display:flex;align-items:center;padding:0 8px;
-    border-bottom:1px solid #E8E8E8;}
-  .nc2-ck{background:#F6F6F4;color:#666;font-weight:850;border-right:1px solid #E8E8E8;}
-  .nc2-cv{font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .nc2-client-grid > *:nth-last-child(-n+2){border-bottom:0;}
-
-  .nc2-meta{border:1px solid #C9C9C9;border-radius:4px;overflow:hidden;font-size:11px;}
-  .nc2-meta-row{display:grid;grid-template-columns:74px minmax(0,1fr);border-bottom:1px solid #E2E2E2;}
-  .nc2-meta-row:last-child{border-bottom:0;}
-  .nc2-meta-split{grid-template-columns:74px minmax(0,1fr) 58px 118px;}
-  .nc2-meta-k,.nc2-meta-v{min-height:25px;display:flex;align-items:center;padding:0 9px;}
-  .nc2-meta-k{background:#F6F6F4;color:#555;font-weight:900;border-right:1px solid #E2E2E2;}
-  .nc2-meta-v{font-weight:900;border-right:1px solid #E2E2E2;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap;}
-  .nc2-meta-v:last-child{border-right:0;}
-  .nc2-meta-wide{border-right:0;}
-
-  .nc2-site{margin-top:12px;display:grid;grid-template-columns:58px minmax(0,1fr) 46px 132px;
-    border:1px solid #D5D5D5;border-radius:4px;overflow:hidden;font-size:11px;}
-  .nc2-site span{min-height:25px;display:flex;align-items:center;padding:0 9px;
-    background:#F6F6F4;color:#555;font-weight:900;border-right:1px solid #E8E8E8;}
-  .nc2-site strong{min-height:25px;display:flex;align-items:center;padding:0 9px;
-    font-weight:900;border-right:1px solid #E8E8E8;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap;}
-  .nc2-site strong:last-child{border-right:0;}
-
-  .nc2-table{width:100%;margin-top:12px;border-collapse:collapse;table-layout:fixed;
-    font-size:11.5px;}
-  .nc2-table th{height:24px;background:#16130F;color:#fff;font-weight:900;font-size:11px;
-    border:1px solid #16130F;letter-spacing:.5px;}
-  .nc2-table td{height:21px;padding:0 7px;border:1px solid #E0E0E0;font-weight:800;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .nc2-table tbody tr:nth-child(even) td{background:#FAFAF9;}
+  .nc2-table tbody tr:nth-child(even) td{background:#FAFAF8;}
   .nc2-l{text-align:left;}
   .nc2-c{text-align:center;}
   .nc2-r{text-align:right;font-variant-numeric:tabular-nums;}
-  .nc2-grp{background:#F3F3F1 !important;font-weight:900;color:#333;}
-  .nc2-amt{font-weight:950;}
-  .nc2-spec,.nc2-note{font-size:10.5px;color:#444;}
+  .nc2-grp{background:#F1F2EE !important;font-weight:850;color:#2A3038;}
+  .nc2-amt{font-weight:900;}
+  .nc2-spec,.nc2-note{font-size:10.5px;color:#454C55;}
   .nc2-sub td{height:18px;background:#fff !important;border-top:0;border-bottom:0;}
-  .nc2-subname{padding-left:16px !important;font-size:10.5px;font-weight:750;color:#555;}
+  .nc2-subname{padding-left:16px !important;font-size:10.5px;font-weight:650;color:#5F6772;}
 
-  .nc2-foot{margin-top:auto;padding-top:16px;display:grid;
-    grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:end;}
-  .nc2-signs{display:grid;grid-template-columns:150px 150px;gap:16px;}
-  .nc2-sign-cell{display:flex;flex-direction:column;align-items:center;gap:5px;}
-  .nc2-sign-label{font-size:11.5px;font-weight:900;color:#333;}
-  .nc2-sign-box{width:150px;height:84px;border:1px solid #BFBFBF;border-radius:3px;
+  /* 아래 묶음 — 기간 · 금액 · 조건 · 서명은 종이 아래쪽에 모은다 */
+  .nc2-bottomgrp{margin-top:auto;padding-top:6px;}
+  .nc2-money-row{display:grid;grid-template-columns:124px minmax(0,1fr);gap:18px;align-items:stretch;}
+  .nc2-money-row > .nc2-sec,.nc2-end-row > .nc2-sec{margin-top:0;}
+  .nc2-end-row{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px;align-items:start;margin-top:12px;}
+  .nc2-period{display:flex;flex-direction:column;}
+  .nc2-period-v{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;
+    border:1px solid #D9DCD6;border-radius:6px;background:#F5F6F3;}
+  .nc2-period-v strong{font-size:26px;font-weight:900;color:#1B2A3A;}
+  .nc2-period-v span{font-size:13px;font-weight:800;color:#5F6772;}
+  .nc2-total{border:0;}
+  .nc2-total-row{display:grid;grid-template-columns:150px minmax(0,1fr);align-items:center;min-height:26px;
+    border-top:1px solid #E1E4DF;font-size:12px;}
+  .nc2-total-row span{padding:0 10px;color:#5F6772;font-weight:750;}
+  .nc2-total-row strong{display:flex;align-items:baseline;justify-content:flex-end;gap:3px;padding:0 12px;
+    font-weight:850;font-variant-numeric:tabular-nums;}
+  .nc2-total-grand{min-height:40px;border-top:2px solid #1B2A3A;background:#F3F5F7;}
+  .nc2-total-grand span{color:#1B2A3A;font-weight:900;font-size:13px;}
+  .nc2-total-grand strong{font-size:22px;font-weight:900;letter-spacing:-.5px;color:#1B2A3A;}
+  .nc2-total-grand em{font-style:normal;font-size:13px;font-weight:800;}
+
+  .nc2-addon-note{margin-top:12px;padding:8px 11px;border-radius:6px;
+    background:#FCEEE4;border:1px solid rgba(210,96,31,.28);
+    color:#5A3317;font-size:10.5px;font-weight:750;line-height:1.5;}
+
+  .nc2-terms ol{margin:0;padding-left:16px;}
+  .nc2-terms li{font-size:10px;font-weight:600;line-height:1.55;color:#454C55;}
+  .nc2-bank{display:inline-block;margin-top:8px;padding:5px 11px;border:1.5px solid #1B2A3A;border-radius:4px;
+    font-size:11px;font-weight:900;}
+
+  .nc2-signs{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .nc2-sign-cell{display:flex;flex-direction:column;align-items:stretch;gap:3px;
+    padding:6px 8px;border:1px solid #D9DCD6;border-radius:6px;}
+  .nc2-sign-label{font-size:11px;font-weight:900;color:#1B2A3A;text-align:center;}
+  .nc2-sign-box{width:100%;height:58px;border:1px dashed #C6CBC3;border-radius:4px;
     background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;}
-  .nc2-sign-touch{cursor:pointer;border:2px dashed #16130F;background:#F4F3F1;
+  .nc2-sign-touch{cursor:pointer;border:2px dashed #D2601F;background:#FCEEE4;
     animation:nc2Pulse 1.6s ease-in-out infinite;}
   @keyframes nc2Pulse{
-    0%,100%{background:#F4F3F1;border-color:#16130F;}
-    50%{background:#E7E5E1;border-color:#6B6660;}
+    0%,100%{background:#FCEEE4;border-color:#D2601F;}
+    50%{background:#F8DCC8;border-color:#A9480F;}
   }
-  .nc2-sign-touch .nc2-sign-empty{color:#16130F;}
-  .nc2-sign-empty{font-size:14px;font-weight:850;color:#B4B4B4;}
-  .nc2-sign-img{max-width:88%;max-height:80%;object-fit:contain;}
-  .nc2-stamp{width:74px;height:74px;object-fit:contain;}
-  .nc2-sign-at{font-size:9.5px;font-weight:800;color:#777;}
-  .nc2-sign-hint{color:#16130F;}
+  .nc2-sign-touch .nc2-sign-empty{color:#A9480F;}
+  .nc2-sign-empty{font-size:14px;font-weight:850;color:#B4B8BD;}
+  .nc2-sign-img{max-width:88%;max-height:84%;object-fit:contain;}
+  .nc2-stamp{width:54px;height:54px;object-fit:contain;}
+  .nc2-sign-at{margin-top:0;font-size:9.5px;font-weight:750;color:#5F6772;text-align:center;}
+  .nc2-sign-hint{color:#A9480F;font-weight:850;}
 
-  .nc2-total{border:1px solid #C9C9C9;border-radius:4px;overflow:hidden;}
-  .nc2-total-row{display:grid;grid-template-columns:110px minmax(0,1fr);align-items:center;
-    min-height:30px;border-bottom:1px solid #E2E2E2;font-size:12px;}
-  .nc2-total-row:last-child{border-bottom:0;}
-  .nc2-total-row span{height:100%;display:flex;align-items:center;padding:0 10px;
-    background:#F6F6F4;color:#555;font-weight:900;border-right:1px solid #E2E2E2;}
-  .nc2-total-row strong{display:flex;align-items:center;justify-content:flex-end;
-    padding:0 12px;font-weight:950;font-variant-numeric:tabular-nums;}
-  .nc2-total-grand{min-height:38px;background:#F4F3F1;}
-  .nc2-total-grand span{background:#16130F;color:#fff;border-right-color:#16130F;font-size:13px;}
-  .nc2-total-grand strong{font-size:19px;letter-spacing:-.5px;color:#16130F;}
-
-  .nc2-title-addon{font-size:31px;letter-spacing:6px;}
-
-  .nc2-addon-note{margin-top:12px;padding:8px 11px;border-radius:5px;
-    background:#F4F3F1;border:1px solid rgba(22,19,15,.20);
-    color:#3A342E;font-size:10.5px;font-weight:850;line-height:1.5;}
-
-  .nc2-terms{margin-top:14px;padding-top:9px;border-top:1px solid #DDD;}
-  .nc2-terms-title{font-size:10.5px;font-weight:900;color:#333;margin-bottom:3px;}
-  .nc2-terms ol{margin:0;padding-left:16px;}
-  .nc2-terms li{font-size:9.5px;font-weight:750;line-height:1.55;color:#555;}
-
-  .nc2-bottom{margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:14px;}
-  .nc2-bank{padding:5px 11px;border:2px solid #111;border-radius:3px;
-    font-size:11px;font-weight:950;}
-  .nc2-contact{margin-left:auto;display:flex;gap:14px;font-size:9.5px;font-weight:800;color:#666;}
-  .nc2-rule{position:absolute;left:0;right:0;bottom:0;height:10px;background:#16130F;z-index:1;}
+  .nc2-bottom{margin-top:10px;display:flex;align-items:center;justify-content:flex-end;gap:14px;}
+  .nc2-contact{display:flex;gap:14px;font-size:9.5px;font-weight:750;color:#5F6772;}
+  .nc2-rule{position:absolute;left:0;right:0;bottom:0;height:8px;background:#1B2A3A;z-index:1;}
+  .nc2-rule::after{content:"";position:absolute;left:0;top:-3px;width:120px;height:3px;background:#D2601F;}
 
   .nc2-dense-1 .nc2-table{font-size:10.5px;}
   .nc2-dense-1 .nc2-table td{height:18px;}
   .nc2-dense-1 .nc2-sub td{height:15px;}
-  .nc2-dense-2 .nc2-table{font-size:9.5px;}
+  .nc2-dense-1 .nc2-sec,.nc2-dense-1 .nc2-band,.nc2-dense-1 .nc2-end-row{margin-top:9px;}
+  .nc2-dense-1 .nc2-kv > span,.nc2-dense-1 .nc2-kv > strong{min-height:20px;}
+  .nc2-dense-1 .nc2-sign-box{height:52px;}
+  .nc2-dense-2 .nc2-table,.nc2-dense-3 .nc2-table{font-size:9.5px;}
   .nc2-dense-2 .nc2-table td{height:15px;padding:0 5px;}
+  .nc2-dense-3 .nc2-table td{height:13.5px;padding:0 5px;}
+  .nc2-dense-2 .nc2-table th,.nc2-dense-3 .nc2-table th{height:22px;}
   .nc2-dense-2 .nc2-sub td{height:13px;}
-  .nc2-dense-2 .nc2-subname{font-size:9px;}
-  .nc2-dense-2 .nc2-spec,.nc2-dense-2 .nc2-note{font-size:9px;}
+  .nc2-dense-3 .nc2-sub td{height:12px;}
+  .nc2-subjoin td{height:auto !important;}
+  /* 세부 줄 이어 쓰기 — 평소엔 한 줄씩(.nc2-sep), 한 장에 안 들어갈 때만(.nc2-joined) 한 칸 */
+  .nc2-subjoin{display:none;}
+  .nc2-joined .nc2-subjoin,.nc2-subjoin.nc2-on{display:table-row;}
+  .nc2-joined .nc2-sep,.nc2-sep.nc2-off{display:none;}
+  /* 그래도 넘칠 때 (fitPaper) — 표 · 머리 · 아래 묶음을 한 번 더 줄인다 */
+  .nc2-tight{padding-top:26px;padding-bottom:18px;}
+  .nc2-tight .nc2-logo{height:30px;}
+  .nc2-tight .nc2-title{font-size:26px;letter-spacing:9px;}
+  .nc2-tight .nc2-head{padding-bottom:8px;}
+  .nc2-tight .nc2-client-name strong{font-size:15px;}
+  .nc2-tight .nc2-kv{font-size:10px;}
+  .nc2-tight .nc2-kv > span,.nc2-tight .nc2-kv > strong{min-height:17px;padding:1px 7px;}
+  .nc2-tight .nc2-table td{height:13px;}
+  .nc2-tight .nc2-sub td{height:11px;}
+  .nc2-tight .nc2-table{font-size:9px;}
+  .nc2-tight .nc2-subname{font-size:8.5px;line-height:1.35;}
+  .nc2-tight .nc2-sec,.nc2-tight .nc2-band,.nc2-tight .nc2-end-row{margin-top:5px;}
+  .nc2-tight .nc2-period-v strong{font-size:20px;}
+  .nc2-tight .nc2-total-row{min-height:19px;font-size:11px;}
+  .nc2-tight .nc2-total-grand{min-height:28px;}
+  .nc2-tight .nc2-total-grand strong{font-size:18px;}
+  .nc2-tight .nc2-terms li{font-size:9px;line-height:1.4;}
+  .nc2-tight .nc2-sign-box{height:38px;}
+  .nc2-tight .nc2-stamp{width:36px;height:36px;}
+  .nc2-tight .nc2-bottom{margin-top:6px;}
+  .nc2-tight-2 .nc2-table td{height:11.5px;padding:0 4px;}
+  .nc2-tight-2 .nc2-table{font-size:8.5px;}
+  .nc2-tight-2 .nc2-table th{height:18px;font-size:9.5px;}
+  .nc2-tight-2 .nc2-h{margin-bottom:3px;font-size:10.5px;}
+  .nc2-tight-2 .nc2-kv > span,.nc2-tight-2 .nc2-kv > strong{min-height:15px;}
+  .nc2-subjoin .nc2-subname{white-space:normal;line-height:1.45;padding-top:2px !important;padding-bottom:2px !important;}
+  .nc2-dense-2 .nc2-subname,.nc2-dense-3 .nc2-subname{font-size:9px;}
+  .nc2-dense-2 .nc2-spec,.nc2-dense-2 .nc2-note,.nc2-dense-3 .nc2-spec,.nc2-dense-3 .nc2-note{font-size:9px;}
+  .nc2-dense-2 .nc2-sec,.nc2-dense-2 .nc2-band,.nc2-dense-2 .nc2-end-row,
+  .nc2-dense-3 .nc2-sec,.nc2-dense-3 .nc2-band,.nc2-dense-3 .nc2-end-row{margin-top:7px;}
+  .nc2-dense-2 .nc2-h,.nc2-dense-3 .nc2-h{margin-bottom:5px;}
+  .nc2-dense-2 .nc2-kv > span,.nc2-dense-2 .nc2-kv > strong,
+  .nc2-dense-3 .nc2-kv > span,.nc2-dense-3 .nc2-kv > strong{min-height:19px;}
+  .nc2-dense-2 .nc2-sign-box,.nc2-dense-3 .nc2-sign-box{height:46px;}
+  .nc2-dense-2 .nc2-stamp,.nc2-dense-3 .nc2-stamp{width:44px;height:44px;}
+  .nc2-dense-2 .nc2-total-row,.nc2-dense-3 .nc2-total-row{min-height:22px;}
+  .nc2-dense-2 .nc2-total-grand,.nc2-dense-3 .nc2-total-grand{min-height:34px;}
+  .nc2-dense-3 .nc2-logo{height:34px;}
+  .nc2-dense-3 .nc2-title{font-size:28px;}
 
   /* 서명 패드 */
   .nc2-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;
@@ -717,13 +860,13 @@
       "Segoe UI","Noto Sans KR","Apple SD Gothic Neo",sans-serif;}
   .nc2-modal-title{font-size:23px;font-weight:950;letter-spacing:-.8px;color:#111;margin-bottom:8px;}
   .nc2-modal-text{font-size:14px;font-weight:750;line-height:1.55;color:#666;margin-bottom:16px;}
-  .nc2-pad-wrap{position:relative;height:320px;border:2px solid #222;border-radius:14px;
+  .nc2-pad-wrap{position:relative;height:320px;border:2px solid #1B2A3A;border-radius:14px;
     background:#fff;overflow:hidden;touch-action:none;}
   #nc2SignCanvas{display:block;width:100%;height:100%;touch-action:none;}
   .nc2-pad-guide{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     pointer-events:none;color:#C6C6C6;font-size:20px;font-weight:850;}
   .nc2-sign-actions{margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:10px;}
-  .nc2-btn{min-height:56px;border:0;border-radius:16px;background:#16130F;color:#fff;
+  .nc2-btn{min-height:56px;border:0;border-radius:14px;background:#1B2A3A;color:#fff;
     font-size:17px;font-weight:900;cursor:pointer;font-family:inherit;}
   .nc2-btn.ghost{background:#F1F1EF;color:#333;border:1px solid rgba(17,17,17,.12);}
   .nc2-btn:disabled{opacity:.5;cursor:not-allowed;}
@@ -760,6 +903,7 @@
     buildDoc: buildDoc,
     screenShell: screenShell,
     fitScreenDoc: fitScreenDoc,
+    fitPaper: fitPaper,
     openSignPad: openSignPad,
     buildSignModal: buildSignModal,
     loadStamp: loadStamp,

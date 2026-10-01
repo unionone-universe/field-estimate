@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#16130F" />
+  <meta name="theme-color" content="#1B2A3A" />
   <title>UNION ONE 견적서 서명</title>
 
   <style>
@@ -17,138 +17,139 @@
       font-display: swap;
     }
 
-    /* 이 화면은 밝은 배경 하나로만 씁니다. 어두운 모드 폰에서 브라우저가
-       스크롤바·기본 요소를 뒤집지 않도록 못 박아 둡니다. */
-    :root { color-scheme: light; }
+    /* ★ 2.0 (2026-10-01) — 견적서 · 앱과 같은 남색 잉크 · 주황 신호색. 고객이 보는 화면이라 정돈된 문서가 먼저.
+       이 화면은 밝은 배경 하나로만 씁니다 (어두운 모드 폰에서 뒤집히지 않게). */
+    :root {
+      color-scheme: light;
+      --bg: #EEF0EC; --surface: #FFFFFF; --line: #DDE0DA; --line-2: #C6CBC3;
+      --ink: #14181D; --ink-2: #3F4650; --ink-3: #5F6772;
+      --brand: #1B2A3A; --accent: #D2601F; --accent-soft: #FCEEE4; --accent-ink: #A9480F;
+      --ok: #1E7149; --danger: #B3261E;
+    }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     html, body {
       margin: 0;
-      background: #F2F2F0;
-      color: #111;
+      background: var(--bg);
+      color: var(--ink);
       font-family: "UOPretendard", "Pretendard", -apple-system, BlinkMacSystemFont,
         "Segoe UI", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
       font-variant-numeric: tabular-nums;
+      word-break: keep-all;
+      overscroll-behavior-y: contain;
     }
 
     .wrap {
-      width: min(860px, 100%);
+      width: min(1180px, 100%);
       margin: 0 auto;
-      padding: 14px 12px calc(24px + env(safe-area-inset-bottom));
+      padding: 0 14px calc(28px + env(safe-area-inset-bottom));
       display: grid;
-      gap: 12px;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .head {
+      margin: 0 -14px;
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 14px 16px;
-      border-radius: 18px;
-      background: #fff;
-      border: 1px solid rgba(17,17,17,.1);
-      box-shadow: 0 8px 20px rgba(17,17,17,.05);
+      gap: 14px;
+      padding: 14px 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
     }
-
-    .head img { width: 132px; height: auto; display: block; }
-
-    .head-text { min-width: 0; }
-    .head-title { font-size: 16px; font-weight: 950; letter-spacing: -.6px; }
-    .head-sub { margin-top: 3px; font-size: 13px; font-weight: 750; color: #666; }
+    .head img { width: 120px; height: auto; display: block; }
+    .head-text { min-width: 0; padding-left: 14px; border-left: 1px solid var(--line); }
+    .head-title { font-size: 17px; font-weight: 850; letter-spacing: -.3px; }
+    .head-sub { margin-top: 2px; font-size: 14px; font-weight: 600; color: var(--ink-3); }
+    .head-sub { word-break: keep-all; }
+    .head-code { white-space: nowrap; }
 
     .paper-shell {
-      padding: 8px;
-      border-radius: 18px;
-      background: #E6E6E3;
-      border: 1px solid rgba(17,17,17,.08);
-      box-shadow: 0 10px 26px rgba(17,17,17,.08);
+      padding: 10px;
+      border-radius: 16px;
+      background: #E3E6E0;
     }
-
-    .paper-inner { background: #fff; overflow: hidden; }
+    .paper-inner { background: #fff; overflow: hidden; box-shadow: 0 10px 30px rgba(20,24,29,.16); }
 
     .panel {
-      padding: 16px;
-      border-radius: 18px;
-      background: #fff;
-      border: 1px solid rgba(17,17,17,.1);
-      box-shadow: 0 8px 20px rgba(17,17,17,.05);
+      padding: 18px;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
       display: grid;
       gap: 12px;
+      align-content: start;
     }
 
     .amount-row {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       justify-content: space-between;
       gap: 12px;
-      font-size: 14px;
-      font-weight: 850;
-      color: #666;
+      font-size: 15px;
+      font-weight: 650;
+      color: var(--ink-3);
     }
-
-    .amount-row strong { color: #111; font-weight: 950; }
-
+    .amount-row strong { color: var(--ink); font-weight: 800; }
     .amount-row.grand {
-      padding-top: 10px;
-      border-top: 1px solid rgba(17,17,17,.12);
-      font-size: 16px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 14px 16px;
+      margin-top: 4px;
+      border-radius: 12px;
+      background: var(--brand);
+      color: rgba(255,255,255,.82);
+      font-size: 14px;
     }
-
-    .amount-row.grand strong { font-size: 22px; color: #16130F; letter-spacing: -.6px; }
+    .amount-row.grand strong { align-self: flex-end; font-size: 28px; color: #fff; letter-spacing: -.6px; }
 
     .guide {
-      padding: 13px 15px;
-      border-radius: 14px;
-      background: #F5F4F2;
-      border: 1px solid rgba(22,19,15,.18);
-      color: #7A4014;
-      font-size: 14px;
-      font-weight: 800;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      color: #5A3317;
+      font-size: 15px;
+      font-weight: 650;
       line-height: 1.6;
-      word-break: keep-all;
     }
+    .guide strong { color: var(--accent-ink); }
 
     .btn {
       width: 100%;
-      min-height: 60px;
+      min-height: 58px;
       border: 0;
-      border-radius: 18px;
-      background: #16130F;
+      border-radius: 14px;
+      background: var(--brand);
       color: #fff;
       font-family: inherit;
-      font-size: 19px;
-      font-weight: 950;
-      letter-spacing: -.4px;
+      font-size: 18px;
+      font-weight: 800;
       cursor: pointer;
-      box-shadow: 0 10px 22px rgba(22,19,15,.2);
       transition: transform .08s ease, opacity .08s ease;
     }
-
     .btn:active { transform: scale(.99); opacity: .94; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
-
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
     .btn.ghost {
-      background: #fff;
-      color: #333;
-      border: 1px solid rgba(17,17,17,.14);
-      box-shadow: none;
+      background: var(--surface);
+      color: var(--ink-2);
+      border: 1px solid var(--line-2);
       min-height: 52px;
       font-size: 16px;
     }
+    #submitBtn { background: var(--accent); }
 
     .status {
       min-height: 20px;
       text-align: center;
       font-size: 14px;
-      font-weight: 800;
+      font-weight: 700;
       line-height: 1.5;
-      color: #666;
-      word-break: keep-all;
+      color: var(--ink-3);
     }
-
-    .status.error { color: #C0392B; }
-    .status.done { color: #1F7A4D; }
+    .status.error { color: var(--danger); }
+    .status.done { color: var(--ok); }
 
     .state-box {
       padding: 40px 22px;
@@ -157,27 +158,33 @@
       gap: 10px;
       justify-items: center;
     }
-
-    .state-title { font-size: 22px; font-weight: 950; letter-spacing: -.8px; }
-    .state-text { font-size: 15px; font-weight: 780; line-height: 1.6; color: #666; word-break: keep-all; }
+    .state-title { font-size: 22px; font-weight: 850; letter-spacing: -.6px; }
+    .state-text { font-size: 15px; font-weight: 600; line-height: 1.6; color: var(--ink-3); }
 
     .spinner {
       width: 34px; height: 34px;
-      border: 4px solid rgba(22,19,15,.18);
-      border-top-color: #16130F;
+      border: 4px solid rgba(27,42,58,.18);
+      border-top-color: var(--brand);
       border-radius: 50%;
       animation: spin .8s linear infinite;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .done-mark {
       width: 62px; height: 62px;
       border-radius: 50%;
-      background: #1F7A4D;
+      background: var(--ok);
       color: #fff;
       display: flex; align-items: center; justify-content: center;
       font-size: 32px; font-weight: 900;
+    }
+
+    /* 넓은 화면(태블릿 대면 · PC) — 견적서 옆에 금액 · 서명 */
+    @media (min-width: 900px) {
+      .wrap { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+      .head { grid-column: 1 / -1; }
+      #statePanel { grid-column: 1 / -1; }
+      #actionPanel { position: sticky; top: 16px; }
     }
 
     .hidden { display: none !important; }
@@ -212,7 +219,7 @@
     <section class="panel hidden" id="actionPanel">
       <div class="amount-row"><span>공급가액</span><strong id="sumSupply">-</strong></div>
       <div class="amount-row"><span>부가세 10%</span><strong id="sumVat">-</strong></div>
-      <div class="amount-row grand"><span>총 계</span><strong id="sumTotal">-</strong></div>
+      <div class="amount-row grand"><span>합계 (부가세 포함)</span><strong id="sumTotal">-</strong></div>
 
       <div class="guide" id="guideBox">
         견적 내용을 확인하신 뒤 <strong>서명하기</strong>를 눌러 주세요.<br />
@@ -415,8 +422,12 @@
       el("paperShell").classList.remove("hidden");
       el("actionPanel").classList.remove("hidden");
 
-      el("headSub").textContent =
-        (docData.customerName || "-") + " 귀하 · " + (docData.code || "");
+      el("headSub").textContent = (docData.customerName || "-") + " 귀하 · ";
+      // 견적번호는 한 덩어리로 — 폰에서 'UO-' 뒤에서 끊겼다 (2.0 · 검수 1차)
+      const codeEl = document.createElement("span");
+      codeEl.className = "head-code";
+      codeEl.textContent = docData.code || "";
+      el("headSub").appendChild(codeEl);
 
       el("sumSupply").textContent = D.num(docData.supply) + "원";
       el("sumVat").textContent = D.num(docData.vat) + "원";

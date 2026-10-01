@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#16130F" />
+  <meta name="theme-color" content="#1B2A3A" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -279,6 +279,60 @@
       .a4-paper:not(.capture-clone) .paper-foot{font-size:13px;padding-top:12px;margin-top:18px}
     }
 
+    /* ===== 현장견적 2.0 (2026-10-01) — 앱 · 견적서와 같은 남색 잉크 · 주황 신호색, 같은 머리줄.
+       ★ 서약서 문구 · 칸 · 서명 · 제출 동작은 그대로이고 색 · 글꼴 · 배치만 맞췄다 ===== */
+    @font-face{font-family:"UOPretendard";src:local("Pretendard Variable"),local("Pretendard"),url("./PretendardVariable.woff2") format("woff2");font-style:normal;font-weight:400 920;font-display:swap}
+    :root{--accent:#1B2A3A;--accent-deep:#1B2A3A;--surface:#EEF0EC;--line:#DDE0DA;--soft:#FCEEE4;--ok:#1E7149}
+    html,body{font-family:"UOPretendard",Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;background:var(--surface);overscroll-behavior-y:contain}
+    /* 낱말 안 끊기(keep-all)는 머리줄 · 작성 상자 · 창에만 — 서약서 종이에 걸면 폰에서 종이가 화면보다 넓어졌다 (검수 1차 · 390px 465px) */
+    .topbar,.action-box,.modal-card{word-break:keep-all}
+    .wrap > *{min-width:0}
+    .topbar{display:flex;position:sticky;top:0;z-index:20;align-items:center;justify-content:space-between;gap:12px;
+      padding:10px 16px;background:rgba(255,255,255,.97);border-bottom:1px solid var(--line)}
+    .brand-mark{width:36px;height:36px;border-radius:10px;background:var(--accent);font-size:0;color:transparent;flex:none}
+    .brand-mark::before{content:"UO";font-size:14px;font-weight:900;color:#fff;letter-spacing:.02em}
+    .brand-title{min-width:0;font-size:17px;font-weight:800;letter-spacing:-.3px}
+    .brand-title br{display:none}
+    .brand-role{font-size:13px;font-weight:600;color:#5F6772}
+    .pin-badge{box-shadow:none;font-weight:700;border-color:var(--line)}
+    .paper-shell{border:0;background:#E3E6E0;box-shadow:none}
+    /* 폰(760px↓)의 여백 · 글자 크기는 위쪽 폰 규칙 그대로 둔다 — 넓은 화면만 2.0 값 */
+    @media (min-width:761px){
+      .pin-badge{font-size:13px}
+      .wrap{padding:16px}
+      .paper-shell{padding:10px;border-radius:16px}
+    }
+    .a4-paper{border:0;box-shadow:0 10px 30px rgba(20,24,29,.16)}
+    .action-box{border:1px solid var(--line);border-radius:16px;box-shadow:none;align-content:start}
+    .site-pick{background:#F6F7F4;border-color:var(--line);border-radius:12px}
+    .site-pick-btn{background:#fff;border:1px solid #C6CBC3;border-radius:10px;color:#3F4650;font-weight:800}
+    .agree{background:var(--soft);border:0;border-radius:12px}
+    .agree input{accent-color:#D2601F}
+    .agree label{font-weight:700}
+    .btn{min-height:54px;border-radius:14px;font-size:17px;font-weight:800;letter-spacing:0}
+    .btn-primary{background:var(--accent);box-shadow:none}
+    .btn-success{background:var(--ok)}
+    .btn-light{background:#fff;color:#3F4650;border:1px solid #C6CBC3}
+    .save-state{background:#E4F2EA;color:#1E7149;border-radius:12px}
+    .modal-card{border-radius:22px}
+    /* 폰(560px↓) — 로고 · 제목 한 줄, 문서정보표는 그 아래 전체 폭 (검수 1차: 제목이 한 글자씩 세로로 꺾이고
+       작성일자 · 회사명이 잘렸다). PDF 는 794px 폭으로 그려서 이 규칙이 걸리지 않는다 — 보관 문서 배치 그대로 */
+    @media (max-width:560px){
+      .paper-head{flex-wrap:wrap;row-gap:12px}
+      .paper-brand{flex:1 1 100%}
+      .paper-meta{flex:1 1 100%}
+      .paper-title{font-size:22px}
+      .identity-grid{grid-template-columns:minmax(0,1fr)}   /* 성명 · 연락처 한 줄씩 — 둘이 나란히면 '터치하여 입력' 이 잘렸다 */
+    }
+    /* 화면의 제목은 낱말 단위로 줄바꿈('서약 / 서' 로 끊기지 않게). PDF(.capture-clone)는 그대로 */
+    .a4-paper:not(.capture-clone) .paper-title,
+    .a4-paper:not(.capture-clone) .paper-foot span{word-break:keep-all}
+    /* 넓은 화면(태블릿 가로 · PC) — 서약서 옆에 현장 · 동의 · 제출 */
+    @media (min-width:1000px){
+      .wrap{width:min(1180px,100%);grid-template-columns:minmax(0,1fr) 340px;align-items:start}
+      .action-box{position:sticky;top:76px}
+      .compact-action-box .action-buttons{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
@@ -287,7 +341,7 @@
     <div class="brand">
       <div class="brand-mark">UNION ONE</div>
       <div class="brand-copy">
-        <div class="brand-title">위험성평가 및<br>안전작업 서약서</div>
+        <div class="brand-title">위험성평가 및 안전작업 서약서</div>
         <div class="brand-role" id="managerBadgeText">담당자 미확인</div>
       </div>
     </div>

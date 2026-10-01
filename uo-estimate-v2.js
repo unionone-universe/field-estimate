@@ -285,7 +285,7 @@
     card.innerHTML =
       '<div class="nc2-amount-row"><span>공급가액</span><strong>' + D.num(supplyAmount()) + "원</strong></div>" +
       '<div class="nc2-amount-row"><span>부가세 10%</span><strong>' + D.num(vatAmount()) + "원</strong></div>" +
-      '<div class="nc2-amount-row nc2-amount-grand"><span>총 계</span><strong>' + D.num(grandTotal()) + "원</strong></div>";
+      '<div class="nc2-amount-row nc2-amount-grand"><span>합계 (부가세 포함)</span><strong>' + D.num(grandTotal()) + "원</strong></div>";
   }
 
   /* ---------------------------------------------------------------
@@ -702,42 +702,9 @@
   /* ---------------------------------------------------------------
      13. 오른쪽 요약 카드 스타일
      --------------------------------------------------------------- */
-  const EXTRA_CSS = `
-  .nc2-amount-card{border:1px solid rgba(17,17,17,.12);border-radius:16px;background:#fff;
-    padding:14px 16px;display:grid;gap:7px;}
-  .nc2-amount-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
-    font-size:13px;font-weight:850;color:#555;}
-  .nc2-amount-row strong{color:#111;font-weight:950;font-variant-numeric:tabular-nums;}
-  .nc2-amount-grand{padding-top:8px;border-top:1px solid rgba(17,17,17,.12);font-size:15px;}
-  .nc2-amount-grand strong{font-size:20px;color:#16130F;letter-spacing:-.5px;}
-  #page5 .estimate-pdf-actions.single-action{display:grid !important;gap:9px;}
-  .nc2-link-box{display:grid;gap:7px;padding:12px 13px;border-radius:14px;
-    background:#F5F4F2;border:1px solid rgba(22,19,15,.16);}
-  .nc2-link-label{font-size:11.5px;font-weight:900;color:#16130F;}
-  .nc2-link-url{font-size:11px;font-weight:750;color:#555;line-height:1.45;
-    word-break:break-all;}
-  .nc2-open-link{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;
-    background:#16130F;color:#fff;font-size:11px;font-weight:900;text-decoration:none;}
-
-  /* v3: 같은 연락처 현장 경고 */
-  .nc2-dup-box{margin:0 0 14px;padding:13px 15px;border-radius:14px;
-    background:#FDF1EF;border:1px solid rgba(192,57,43,.26);}
-  .nc2-dup-title{font-size:14.5px;font-weight:950;color:#C0392B;letter-spacing:-.3px;
-    margin-bottom:8px;}
-  .nc2-dup-row{padding:8px 10px;margin-bottom:6px;border-radius:10px;background:#FFFFFF;
-    border:1px solid rgba(17,17,17,.08);}
-  .nc2-dup-code{font-size:11.5px;font-weight:900;color:#C0392B;
-    font-variant-numeric:tabular-nums;}
-  .nc2-dup-name{font-size:13.5px;font-weight:900;color:#111;line-height:1.3;
-    margin-top:2px;word-break:keep-all;}
-  .nc2-dup-sub{font-size:11.5px;font-weight:800;color:#777;margin-top:2px;}
-  .nc2-dup-help{font-size:12.5px;font-weight:800;color:#5A2A24;line-height:1.5;
-    word-break:keep-all;margin-top:4px;}
-  .nc2-dup-btn{width:100%;min-height:46px;margin-top:10px;border:0;border-radius:12px;
-    background:#C0392B;color:#fff;font-size:14px;font-weight:900;cursor:pointer;
-    font-family:inherit;}
-  .nc2-dup-btn:active{transform:scale(.99);}
-  `;
+  /* ★ 2.0 (2026-10-01) — 요약 카드 · 링크 상자 · 같은 연락처 경고의 모양은 index.html 의 새 스타일 한 곳에 있습니다.
+     여기서 또 적으면 나중에 붙는 이 스타일이 새 디자인을 덮어씁니다. 빈 칸으로 둡니다. */
+  const EXTRA_CSS = ``;
 
   function injectExtraStyle() {
     if (document.getElementById("nc2AppStyle")) return;
