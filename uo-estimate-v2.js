@@ -450,7 +450,8 @@
         showLinkBox(link);
       }, 1200);
       /* 선택판을 닫았으므로 링크 상자가 있는 오른쪽 판이 보이게 고객 화면을 푼다 */
-      document.body.classList.remove("customer-view");
+      if (typeof window.setCustomerView === "function") window.setCustomerView(false);   // 단추 글자도 같이 (2026-10-02)
+      else document.body.classList.remove("customer-view");
     } catch (err) {
       console.error(err);
       btn.disabled = false;

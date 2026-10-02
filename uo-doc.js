@@ -44,9 +44,14 @@
   const PAPER_W = 794;
   const PAPER_H = 1123;
   /* 처음 밀도를 고르는 어림 무게(묶음 줄 1 · 세부 줄 0.8 · 긴 이름 · 주소는 넘친 줄만큼) 의 경계.
-     794 × 1123 종이에 실제로 넣어 잰 값(2026-10-01): 기본 ~21 · dense-1 ~24 · dense-2 ~31 · dense-3+tight ~36 · tight-2 ~38.
-     세부 줄이 있으면 31 을 넘을 때 이어 쓴 판으로(그 판은 세부 줄 100개도 들어간다) */
-  const DOC_FIT = { dense1: 20, dense2: 24, dense3: 31, tight: 33, tight2: 37 };
+     794 × 1123 종이에 실제로 넣어 잰 값(2026-10-01): 기본 ~21 · dense-1 ~24 · dense-2 ~31.
+     세부 줄이 있으면 31 을 넘을 때 이어 쓴 판으로(그 판은 세부 줄 100개도 들어간다).
+     ★ 줄이는 것은 dense-3 · 이어 쓰기까지 — 그래도 넘치면 **여러 쪽**(nc2-multi)으로 나눈다 (2026-10-02 · 19 지시
+       '긴 문서를 억지로 한 장에 줄여 읽을 수 없게 하지 않는다'). 예전의 tight(표 9px) · tight-2(8.5px)는 없앴다 */
+  const DOC_FIT = { dense1: 20, dense2: 24, dense3: 31 };
+  /* 둘째 쪽부터 위 여백 · 모든 쪽 아래 여백 (쪽 번호 자리) */
+  const PAGE_TOP = 40;
+  const PAGE_BOTTOM = 34;
 
   const LOGO_FILE = "./uo-logo.png";
   const MARK_FILE = "./uo-watermark.png";
@@ -182,15 +187,13 @@
     const addrLines = Math.max(1, Math.ceil(String(d.address || "").length / 30));
     const extra = (nameLines - 1) * 1.5 + (addrLines - 1);
     const sepWeight = raw.reduce(function (w, row) { return w + (row.sub ? 0.8 : 1); }, 0) + extra;
-    /* 단계는 fitPaper 와 같은 차례로 쌓는다(dense-1 → 2 → 3 → 이어 쓰기 → tight → tight-2).
-       이 어림만으로도 한 장에 들어가게 잡고, 화면 · PDF 에서는 fitPaper 가 실제 높이로 한 번 더 확인한다 */
+    /* 단계는 fitPaper 와 같은 차례로 쌓는다(dense-1 → 2 → 3 → 이어 쓰기).
+       화면 · PDF 에서는 fitPaper 가 실제 높이로 한 번 더 확인하고, 그래도 넘치면 여러 쪽으로 */
     const hasRuns = runs.some(function (run) { return run.items.length > 1; });
     let lvl = 0;
     if (sepWeight > DOC_FIT.dense1) lvl = 1;
     if (sepWeight > DOC_FIT.dense2) lvl = 2;
     if (sepWeight > DOC_FIT.dense3) lvl = hasRuns ? 4 : 3;
-    if (!hasRuns && sepWeight > DOC_FIT.tight) lvl = 5;
-    if (!hasRuns && sepWeight > DOC_FIT.tight2) lvl = 6;
     const density = DENSITY_STEPS.slice(0, lvl).filter(function (c) { return hasRuns || c !== "nc2-joined"; })
       .map(function (c) { return " " + c; }).join("");
 
@@ -381,7 +384,7 @@
      한 장에 맞추기 — 화면 · PDF 에 놓은 종이의 실제 높이를 재서, 넘치면 밀도를 한 단계씩 더 올린다 (2.0 · 검수 1차).
      buildDoc 의 어림(줄 수 · 이름 · 주소 길이)이 빗나가도 서명 · 연락처가 잘리지 않게 하는 안전장치
      --------------------------------------------------------------- */
-  const DENSITY_STEPS = ["nc2-dense-1", "nc2-dense-2", "nc2-dense-3", "nc2-joined", "nc2-tight", "nc2-tight-2"];
+  const DENSITY_STEPS = ["nc2-dense-1", "nc2-dense-2", "nc2-dense-3", "nc2-joined"];
   function fitPaper(paper) {
     if (!paper || !paper.classList) return;
     const over = function () { return paper.scrollHeight > PAPER_H + 1; };
@@ -418,6 +421,87 @@
         paper.classList.add(DENSITY_STEPS[i]);
       }
     }
+    /* ★ 읽을 수 있는 크기(dense-3 · 이어 쓰기)까지 줄여도 넘치면 종이를 늘리고 PDF 에서 쪽을 나눈다 (pageSlices) */
+    if (over()) paper.classList.add("nc2-multi");
+  }
+
+  /**
+   * 여러 쪽 견적서를 A4 쪽으로 자를 자리 (CSS px · 종이 위에서부터).
+   * ★ 표의 줄 · 묶음(현장 · 표 · 금액 · 조건 · 서명) 사이에서만 자른다 — 글자 한 줄이 두 쪽에 걸치지 않게.
+   * ★ 둘째 쪽부터는 표 머리(구분 · 품명 · …)를 다시 그린다 (canvasToPdf).
+   * 한 장이면 { slices:[[0, PAPER_H]] } — 예전과 똑같이 한 장으로 만든다.
+   */
+  function pageSlices(paper) {
+    const H = paper ? Math.ceil(paper.scrollHeight) : PAPER_H;
+    if (!paper || !paper.classList.contains("nc2-multi") || H <= PAPER_H + 1) return { slices: [[0, PAPER_H]] };
+    const top = paper.getBoundingClientRect().top;
+    const rel = function (el) { const r = el.getBoundingClientRect(); return [Math.round(r.top - top), Math.round(r.bottom - top)]; };
+    const thead = paper.querySelector(".nc2-table thead"), table = paper.querySelector(".nc2-table");
+    const head = thead ? rel(thead) : null, tbl = table ? rel(table) : null;
+    const headH = head ? head[1] - head[0] : 0;
+    const cuts = [];
+    Array.prototype.forEach.call(paper.querySelectorAll(
+      ".nc2-table tbody tr, .nc2-sec, .nc2-band, .nc2-bottomgrp, .nc2-money-row, .nc2-end-row, .nc2-bottom"), function (el) {
+      if (!el.getClientRects().length) return;
+      /* 표의 줄은 줄 경계 그대로, 묶음은 몇 px 위에서 — 번호 딱지 윗변이 앞 쪽 끝에 걸리지 않게 */
+      cuts.push(rel(el)[0] - (el.tagName === "TR" ? 0 : 8));
+    });
+    cuts.sort(function (a, b) { return a - b; });
+    const slices = [];
+    let start = 0;
+    while (start < H && slices.length < 20) {
+      const room = PAPER_H - PAGE_BOTTOM - (slices.length ? PAGE_TOP + headH : 0);
+      if (H - start <= room) { slices.push([start, H]); break; }
+      const limit = start + room;
+      let cut = 0;
+      cuts.forEach(function (c) { if (c > start + 60 && c <= limit) cut = c; });
+      if (!cut) cut = limit;                 // 자를 자리가 없는 아주 긴 칸 — 그 자리에서 자른다
+      slices.push([start, cut]);
+      start = cut;
+    }
+    return { slices: slices, head: head, table: tbl };
+  }
+
+  /**
+   * 그려 둔 견적서(canvas · canvas.uoPages)를 A4 PDF 로.
+   * 한 장이면 예전 그대로 한 쪽 · 여러 쪽이면 자른 자리대로 쪽을 만들고 아래에 '1 / 2 쪽' 을 적는다.
+   */
+  function canvasToPdf(canvas) {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      throw new Error("PDF 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.");
+    }
+    const jsPDF = window.jspdf.jsPDF;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+    const pg = canvas.uoPages;
+    if (!pg || !pg.slices || pg.slices.length <= 1) {
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      return pdf;
+    }
+    const s = canvas.width / PAPER_W, W = canvas.width, H = Math.round(PAPER_H * s);
+    pg.slices.forEach(function (sl, i) {
+      if (i) pdf.addPage();
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      const g = c.getContext("2d");
+      g.fillStyle = "#FFFFFF"; g.fillRect(0, 0, W, H);
+      let y = 0;
+      if (i) {
+        y = PAGE_TOP;
+        if (pg.head && pg.table && sl[0] > pg.table[0] && sl[0] < pg.table[1]) {
+          const hh = pg.head[1] - pg.head[0];
+          g.drawImage(canvas, 0, pg.head[0] * s, W, hh * s, 0, y * s, W, hh * s);
+          y += hh;
+        }
+      }
+      const h = sl[1] - sl[0];
+      g.drawImage(canvas, 0, sl[0] * s, W, h * s, 0, y * s, W, h * s);
+      g.fillStyle = "#5F6772";
+      g.font = "600 " + Math.round(11 * s) + "px sans-serif";
+      g.textAlign = "right";
+      g.fillText((i + 1) + " / " + pg.slices.length + " 쪽", W - 40 * s, H - 14 * s);
+      pdf.addImage(c.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+    });
+    return pdf;
   }
 
   function fitScreenDoc(hostEl, maxHeightEl) {
@@ -425,7 +509,12 @@
     if (!host) return;
     const wrap = host.querySelector(".nc2-screen-wrap");
     if (!wrap) return;
-    fitPaper(wrap.querySelector(".nc2-paper"));
+    const paper = wrap.querySelector(".nc2-paper");
+    fitPaper(paper);
+    /* 여러 쪽 견적서는 종이 높이만큼 — 폭에 맞춰 줄이고 아래로 넘겨 본다 */
+    const multi = !!(paper && paper.classList.contains("nc2-multi"));
+    const PH = multi ? Math.ceil(paper.scrollHeight) : PAPER_H;
+    wrap.style.height = PH + "px";
 
     const availW = host.clientWidth || PAPER_W;
     const panel = maxHeightEl || host.closest(".estimate-doc");
@@ -438,11 +527,11 @@
     const availH = panel ? panel.clientHeight - 32 : 0;
 
     let k = availW / PAPER_W;
-    if (availH > 240) k = Math.min(k, availH / PAPER_H);
+    if (availH > 240 && !multi) k = Math.min(k, availH / PAPER_H);
     k = Math.max(0.22, Math.min(k, 1.15));
 
     wrap.style.transform = "scale(" + k + ")";
-    host.style.height = Math.round(PAPER_H * k) + "px";
+    host.style.height = Math.round(PH * k) + "px";
   }
 
   function screenShell(html) {
@@ -630,7 +719,7 @@
       return new Promise(function (resolve) { img.onload = resolve; img.onerror = resolve; });
     }));
     await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
-    fitPaper(paper);                       // PDF · 사진도 화면과 같이 한 장에 맞춘다
+    fitPaper(paper);                       // PDF · 사진도 화면과 같은 판 (넘치면 여러 쪽)
 
     const canvas = await html2canvas(paper, {
       scale: 2,
@@ -638,6 +727,7 @@
       backgroundColor: "#FFFFFF",
       logging: false
     });
+    canvas.uoPages = pageSlices(paper);    // 자를 자리는 종이가 화면에 있을 때 잰다
 
     host.innerHTML = "";
     return canvas;
@@ -649,10 +739,7 @@
     }
 
     const canvas = await renderCanvas(buildDoc(data, ""));
-    const jsPDF = window.jspdf.jsPDF;
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-    pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, 210, 297, undefined, "FAST");
-    return pdf.output("blob");
+    return canvasToPdf(canvas).output("blob");
   }
 
   function blobToBase64(blob) {
@@ -808,32 +895,8 @@
   .nc2-subjoin{display:none;}
   .nc2-joined .nc2-subjoin,.nc2-subjoin.nc2-on{display:table-row;}
   .nc2-joined .nc2-sep,.nc2-sep.nc2-off{display:none;}
-  /* 그래도 넘칠 때 (fitPaper) — 표 · 머리 · 아래 묶음을 한 번 더 줄인다 */
-  .nc2-tight{padding-top:26px;padding-bottom:18px;}
-  .nc2-tight .nc2-logo{height:30px;}
-  .nc2-tight .nc2-title{font-size:26px;letter-spacing:9px;}
-  .nc2-tight .nc2-head{padding-bottom:8px;}
-  .nc2-tight .nc2-client-name strong{font-size:15px;}
-  .nc2-tight .nc2-kv{font-size:10px;}
-  .nc2-tight .nc2-kv > span,.nc2-tight .nc2-kv > strong{min-height:17px;padding:1px 7px;}
-  .nc2-tight .nc2-table td{height:13px;}
-  .nc2-tight .nc2-sub td{height:11px;}
-  .nc2-tight .nc2-table{font-size:9px;}
-  .nc2-tight .nc2-subname{font-size:8.5px;line-height:1.35;}
-  .nc2-tight .nc2-sec,.nc2-tight .nc2-band,.nc2-tight .nc2-end-row{margin-top:5px;}
-  .nc2-tight .nc2-period-v strong{font-size:20px;}
-  .nc2-tight .nc2-total-row{min-height:19px;font-size:11px;}
-  .nc2-tight .nc2-total-grand{min-height:28px;}
-  .nc2-tight .nc2-total-grand strong{font-size:18px;}
-  .nc2-tight .nc2-terms li{font-size:9px;line-height:1.4;}
-  .nc2-tight .nc2-sign-box{height:38px;}
-  .nc2-tight .nc2-stamp{width:36px;height:36px;}
-  .nc2-tight .nc2-bottom{margin-top:6px;}
-  .nc2-tight-2 .nc2-table td{height:11.5px;padding:0 4px;}
-  .nc2-tight-2 .nc2-table{font-size:8.5px;}
-  .nc2-tight-2 .nc2-table th{height:18px;font-size:9.5px;}
-  .nc2-tight-2 .nc2-h{margin-bottom:3px;font-size:10.5px;}
-  .nc2-tight-2 .nc2-kv > span,.nc2-tight-2 .nc2-kv > strong{min-height:15px;}
+  /* 그래도 넘칠 때 (fitPaper) — 더 줄이지 않고 종이를 늘린다. PDF 는 pageSlices 자리에서 쪽을 나눈다 */
+  .nc2-paper.nc2-multi{height:auto;min-height:${PAPER_H}px;overflow:visible;}
   .nc2-subjoin .nc2-subname{white-space:normal;line-height:1.45;padding-top:2px !important;padding-bottom:2px !important;}
   .nc2-dense-2 .nc2-subname,.nc2-dense-3 .nc2-subname{font-size:9px;}
   .nc2-dense-2 .nc2-spec,.nc2-dense-2 .nc2-note,.nc2-dense-3 .nc2-spec,.nc2-dense-3 .nc2-note{font-size:9px;}
@@ -904,6 +967,8 @@
     screenShell: screenShell,
     fitScreenDoc: fitScreenDoc,
     fitPaper: fitPaper,
+    pageSlices: pageSlices,
+    canvasToPdf: canvasToPdf,
     openSignPad: openSignPad,
     buildSignModal: buildSignModal,
     loadStamp: loadStamp,

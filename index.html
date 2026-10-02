@@ -2155,7 +2155,7 @@
     /* ★ 앱 판 번호 — 여기 한 곳만 고칩니다.
        화면을 고쳐서 올릴 때마다 0.01 씩 올립니다 (0.14 → 0.15 → 0.16 …).
        로그인 화면 맨 아래에 이 값이 그대로 나옵니다. */
-    const APP_VERSION = "0.28";   // 2026-10-01 현장견적 2.0 (홈 · 작성 4단계 · 금액 사내/고객 분리 · 견적서 새 서식)
+    const APP_VERSION = "0.29";   // 2026-10-02 고객 화면 단추 동기화 · 긴 견적서 여러 쪽 PDF
 
     const STAFF_STORAGE_KEY = "uo_current_staff_name_v1";
     const PHONE_STORAGE_KEY = "uo_last_phone_v1";
@@ -2402,6 +2402,7 @@
       const feed = document.getElementById("homeFeed"); if (feed) feed.innerHTML = "";
       const fc = document.getElementById("homeFieldCount"); if (fc) fc.textContent = "";
       state.auth = { loggedIn: false, staffName: "", role: "사무실" };
+      setCustomerView(false);
       try { localStorage.removeItem(ROLE_STORAGE_KEY); } catch (err) {}
       testMode = false;
       testArmed = false;
@@ -4430,6 +4431,8 @@
         backgroundColor: "#FFFFFF",
         logging: false
       });
+      /* 여러 쪽 견적서면 자를 자리 (종이가 화면에 있을 때 잰다 · 2026-10-02) */
+      if (window.UODoc && UODoc.pageSlices) canvas.uoPages = UODoc.pageSlices(paper);
 
       host.innerHTML = "";
       return canvas;
@@ -4455,16 +4458,15 @@
 
       const canvas = await renderEstimateCanvas();
 
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-        compress: true
-      });
-
-      const imageData = canvas.toDataURL("image/jpeg", 0.94);
-      pdf.addImage(imageData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      /* ★ 한 장이면 예전 그대로 · 읽을 수 있는 크기로도 안 들어가는 긴 견적서는 쪽을 나눈다 (UODoc.canvasToPdf · 2026-10-02) */
+      let pdf;
+      if (window.UODoc && UODoc.canvasToPdf) {
+        pdf = UODoc.canvasToPdf(canvas);
+      } else {
+        const { jsPDF } = window.jspdf;
+        pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+        pdf.addImage(canvas.toDataURL("image/jpeg", 0.94), "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      }
 
       const fileName = getPdfSafeFileName();
       const blob = pdf.output("blob");
@@ -4995,7 +4997,7 @@
 
     function showScreen(id) {
       document.body.classList.toggle("on-menu", id === "pageMenu");
-      document.body.classList.remove("customer-view");     // 고객 화면은 그 화면을 떠나면 풀린다
+      setCustomerView(false);     // 고객 화면은 그 화면을 떠나면 풀린다 — 단추 글자도 같이
       hideAllScreens();
       const el = document.getElementById(id);
       if (el) el.classList.add("active");
@@ -5006,7 +5008,7 @@
       /* ★ 2.0 — 작업 범위(page3)는 작업·물량 화면(page1)으로 합쳤다. 옛 연결은 그리로 */
       if (pageNo === 3) pageNo = 1;
       document.body.classList.remove("on-menu");
-      document.body.classList.remove("customer-view");
+      setCustomerView(false);
       hideAllScreens();
       page0.classList.toggle("active", pageNo === 0);
       page1.classList.toggle("active", pageNo === 1);
@@ -5674,10 +5676,10 @@
         const tb = document.querySelector("#" + id + " .topbar");
         if (!tb) return;
         const b = document.createElement("button");
-        b.type = "button"; b.className = "cv-btn office-only"; b.textContent = "고객 화면";
+        b.type = "button"; b.className = "cv-btn office-only";
         b.addEventListener("click", () => {
-          const on = document.body.classList.toggle("customer-view");
-          document.querySelectorAll(".cv-btn").forEach(x => { x.textContent = on ? "직원 화면으로" : "고객 화면"; });
+          const on = !document.body.classList.contains("customer-view");
+          setCustomerView(on);
           // 작업·물량에서 켜면 가운데를 작업 범위로 — 물량 입력(원가 · 사내 메모)은 고객 화면에서 감춘다
           if (on && id === "page1" && document.getElementById("scopeDetail").hidden) {
             renderScopeCategory(state.scopeCategory || "demolition");
@@ -5685,7 +5687,22 @@
         });
         tb.appendChild(b);
       });
+      setCustomerView(document.body.classList.contains("customer-view"));    // 처음 글자 · 상태
     })();
+
+    /* ★ 고객 화면은 이 한 곳에서만 켜고 끈다 (2026-10-02 · 19 지시).
+       예전에는 화면을 옮길 때 클래스만 지우고 단추 글자는 누를 때만 바뀌어,
+       직원 화면인데 단추가 '직원 화면으로' 로 남았다. 이제 모드 · 모든 [고객 화면] 단추 글자 · aria-pressed 가 늘 같다.
+       ★ 보이는 것만 가린다 — 권한이 아니다. 반장 화면은 role-field, 막는 것은 서버 OFFICE_ACTIONS */
+    function setCustomerView(on) {
+      on = !!on;
+      document.body.classList.toggle("customer-view", on);
+      document.querySelectorAll(".cv-btn").forEach(x => {
+        x.textContent = on ? "직원 화면으로" : "고객 화면";
+        x.setAttribute("aria-pressed", on ? "true" : "false");
+        x.title = on ? "원가 · 사내 정보를 다시 보이게" : "고객에게 보여 줄 때 — 원가 · 사내 정보를 감춤";
+      });
+    }
 
     function renumberMenu() {
       let no = 1;
