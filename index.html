@@ -142,10 +142,11 @@
     .start-title { margin: 18px 0 4px; font-size: 26px; font-weight: 850; letter-spacing: -.03em; line-height: 1.25; }
     .start-title::after { content: "휴대폰 번호와 PIN 4자리로 들어갑니다"; display: block; margin-top: 6px;
       font-size: var(--fs-sm); font-weight: 500; color: var(--ink-3); letter-spacing: 0; }
-    .login-form { display: grid; gap: 16px; margin-top: 22px; }
-    .login-field { display: grid; gap: 6px; }
+    .login-form { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 16px; margin-top: 22px; }
+    .login-field { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 6px; }
     .login-field > span { font-size: var(--fs-sm); font-weight: 700; color: var(--ink-2); }
     .login-input {
+      width: 100%; min-width: 0; max-width: 100%;
       height: var(--tap-lg); padding: 0 16px;
       border: 1px solid var(--line-2); border-radius: var(--r-md);
       background: var(--surface); font-size: 20px; font-weight: 700; letter-spacing: .04em;
@@ -2155,7 +2156,7 @@
     /* ★ 앱 판 번호 — 여기 한 곳만 고칩니다.
        화면을 고쳐서 올릴 때마다 0.01 씩 올립니다 (0.14 → 0.15 → 0.16 …).
        로그인 화면 맨 아래에 이 값이 그대로 나옵니다. */
-    const APP_VERSION = "0.29";   // 2026-10-02 고객 화면 단추 동기화 · 긴 견적서 여러 쪽 PDF
+    const APP_VERSION = "0.30";   // 2026-10-07 좁은 화면 로그인 입력칸 넘침 수정
 
     const STAFF_STORAGE_KEY = "uo_current_staff_name_v1";
     const PHONE_STORAGE_KEY = "uo_last_phone_v1";
