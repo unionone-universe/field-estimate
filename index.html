@@ -927,6 +927,8 @@
     #pdfRenderHost { position: fixed; left: -20000px; top: 0; width: 794px; pointer-events: none; }
     /* 지난 단계(항목 기준 · 작업 범위)는 자리만 남는다 — 판은 금액 · 작업·물량 화면으로 옮겼다 */
     #page2, #page3 { display: none !important; }
+
+.common-sites-dialog{width:min(680px,calc(100vw - 24px));max-height:85dvh;border:1px solid #b8c2bc;border-radius:18px;padding:20px;color:#18231e;background:#fff;overflow:auto}.common-sites-dialog::backdrop{background:#101a16aa}.common-sites-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}.common-sites-dialog header button{width:auto;min-width:64px;min-height:44px}.common-sites-dialog article{padding:16px 0;border-bottom:1px solid #cad3ce}.common-sites-dialog p{line-height:1.6;overflow-wrap:anywhere}.common-sites-dialog article span{font-size:13px;color:#496355}.common-sites-dialog footer{padding-top:16px}
 </style>
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta name="theme-color" content="#1B2A3A" />
@@ -1606,6 +1608,7 @@
           <span class="menu-card-desc">비슷한 조건의 지난 현장이 실제로 얼마나 들었는지 봅니다.</span>
         </button>
 
+        <div class="office-only" style="grid-column:1/-1"><button type="button" class="hh-out" onclick="openCommonSites()">워크보드 연결 현장 ↗</button></div>
         <div class="home-feed" id="homeFeed" aria-live="polite"></div>
       </section>
     </section>
@@ -2156,7 +2159,18 @@
     /* ★ 앱 판 번호 — 여기 한 곳만 고칩니다.
        화면을 고쳐서 올릴 때마다 0.01 씩 올립니다 (0.14 → 0.15 → 0.16 …).
        로그인 화면 맨 아래에 이 값이 그대로 나옵니다. */
-    const APP_VERSION = "0.30";   // 2026-10-07 좁은 화면 로그인 입력칸 넘침 수정
+    let commonSiteSeq=0;
+    async function openCommonSites(){
+      if(isFieldStaff())return;
+      let dialog=document.getElementById('commonSitesDialog');
+      if(!dialog){dialog=document.createElement('dialog');dialog.id='commonSitesDialog';dialog.className='common-sites-dialog';dialog.innerHTML='<header><h2>워크보드 연결 현장</h2><button type="button" class="nav-btn" id="commonSitesClose">닫기</button></header><p>워크보드에서 확인해 연결한 현장입니다. 원래 견적 정보는 그대로 유지됩니다.</p><div id="commonSitesBody" aria-live="polite"></div><footer><a href="https://work.unionone8868.com/" target="_blank" rel="noopener noreferrer">워크보드에서 연결 관리 ↗</a></footer>';document.body.appendChild(dialog);document.getElementById('commonSitesClose').onclick=()=>{commonSiteSeq++;dialog.close();};dialog.addEventListener('cancel',()=>commonSiteSeq++);}
+      dialog.showModal();const seq=++commonSiteSeq,key=getToken();document.getElementById('commonSitesBody').textContent='최근 견적의 연결 상태를 확인하고 있습니다…';
+      try{const r=await jsonpRequest({action:'siteList',limit:60});if(seq!==commonSiteSeq||!dialog.open||key!==getToken())return;if(!r||!r.ok)throw Error('조회 실패');
+        const rows=r.rows||[];document.getElementById('commonSitesBody').innerHTML=rows.length?rows.map(one=>{const c=one.common,linked=c&&c.state==='linked';return '<article><strong>'+escapePdfHtml(linked?c.name:one.customerName||one.code)+'</strong><p>'+escapePdfHtml(one.code)+' · '+escapePdfHtml(linked?c.address:one.address||'')+'</p><span>'+escapePdfHtml(linked?'연결됨':c&&c.state==='changed'?'원본 변경 · 연결 재확인':c&&c.state==='unavailable'?'연결 확인 불가':'아직 연결하지 않음')+'</span></article>';}).join(''):'<p>표시할 견적이 없습니다.</p>';
+      }catch(e){if(seq===commonSiteSeq&&dialog.open)document.getElementById('commonSitesBody').textContent='연결 상태를 불러오지 못했습니다. 잠시 후 다시 열어주세요.';}
+    }
+
+    const APP_VERSION = "0.31";   // 2026-10-07 좁은 화면 로그인 입력칸 넘침 수정
 
     const STAFF_STORAGE_KEY = "uo_current_staff_name_v1";
     const PHONE_STORAGE_KEY = "uo_last_phone_v1";
