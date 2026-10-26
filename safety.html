@@ -1075,7 +1075,11 @@
     setTimeout(()=>{ window.location.href = `sms:${number}?body=${encodeURIComponent(body)}`; }, 450);
   });
 
-  $('#backToMenuBtn').addEventListener('click', ()=>{ window.location.href = './index.html'; });
+  /* 같은 탭에서 바로 돌아가는 것만 표시한다 — 견적 화면이 그 사람 그대로 열린다(30분 안 · 한 번만) (2026-10-26) */
+  $('#backToMenuBtn').addEventListener('click', ()=>{
+    try { sessionStorage.setItem('uo_back_from_safety', String(Date.now())); } catch (err) {}
+    window.location.href = './index.html';
+  });
 
   // 견적 프로그램에서 로그인한 담당자를 그대로 이어받습니다.
   // 담당자 이름이 넘어오면 PIN을 다시 묻지 않습니다.

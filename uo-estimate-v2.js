@@ -423,7 +423,7 @@
     if (status) status.textContent = "서명 링크를 만들고 있습니다.";
 
     try {
-      const result = await jsonpRequest({ action: "signToken", code: code });
+      const result = await (window.cachedJsonp || jsonpRequest)({ action: "signToken", code: code });
       if (!result || !result.ok || !result.token) {
         throw new Error((result && result.message) || "서명 링크를 만들지 못했습니다.");
       }
@@ -915,7 +915,12 @@
     statusEl.textContent = "불러오는 중...";
 
     try {
-      const result = await jsonpRequest({ action: "signStatusList", filter: signFilter });
+      /* 받아 둔 것을 바로 보여 주고, 다른 칸(전체 · 서명완료 · 서명대기)도 미리 받아 둔다 (2026-10-26) */
+      const result = window.cachedJsonp
+        ? await window.cachedJsonp({ action: "signStatusList", filter: signFilter }, undefined,
+            function () { if (listEl.offsetParent !== null) loadSignStatus(); })
+        : await jsonpRequest({ action: "signStatusList", filter: signFilter });
+      if (window.readPrefetch) ["전체", "완료", "대기"].forEach(function (f) { if (f !== signFilter) window.readPrefetch({ action: "signStatusList", filter: f }); });
       if (!result || !result.ok) throw new Error((result && result.message) || "불러오지 못했습니다.");
 
       const rows = result.rows || [];
@@ -971,7 +976,7 @@
     statusEl.textContent = "불러오는 중...";
 
     try {
-      const result = await jsonpRequest({ action: "addonBaseList" });
+      const result = await (window.cachedJsonp || jsonpRequest)({ action: "addonBaseList" });
       if (!result || !result.ok) throw new Error((result && result.message) || "불러오지 못했습니다.");
 
       const rows = result.rows || [];
