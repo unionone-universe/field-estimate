@@ -2179,7 +2179,7 @@
       }catch(e){if(seq===commonSiteSeq&&dialog.open)document.getElementById('commonSitesBody').textContent='연결 상태를 불러오지 못했습니다. 잠시 후 다시 열어주세요.';}
     }
 
-    const APP_VERSION = "0.32";   // 2026-10-26 목록 바로 보기 · 사진 뒤에서 올리기
+    const APP_VERSION = "0.33";   // 2026-10-29 말투 정리
 
     const STAFF_STORAGE_KEY = "uo_current_staff_name_v1";
     const PHONE_STORAGE_KEY = "uo_last_phone_v1";
@@ -5841,7 +5841,7 @@
       document.querySelectorAll(".cv-btn").forEach(x => {
         x.textContent = on ? "직원 화면으로" : "고객 화면";
         x.setAttribute("aria-pressed", on ? "true" : "false");
-        x.title = on ? "원가 · 사내 정보를 다시 보이게" : "고객에게 보여 줄 때 — 원가 · 사내 정보를 감춤";
+        x.title = on ? "원가 · 사내 정보를 다시 보이게" : "고객용 화면 · 원가와 사내 정보 숨김";
       });
     }
 
@@ -6311,7 +6311,7 @@
         countEl.textContent = rows.length + "건";
         statusEl.textContent = rows.length
           ? rows.length + "건을 찾았습니다."
-          : "조건에 맞는 현장이 없습니다. 조건을 넓혀 보세요.";
+          : "조건에 맞는 현장이 없습니다.";
 
         if (!rows.length) {
           listEl.innerHTML = `<div class="list-empty">조건에 맞는 현장이 없습니다.<br />실제 원가가 입력된 현장만 조회됩니다.</div>`;
